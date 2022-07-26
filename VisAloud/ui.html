@@ -1,0 +1,27 @@
+<h2>VisAloud</h2>
+<p>Count: <input id="count" value="1"></p>
+<p>Compare1: <input id="compare1" value="1"></p>
+<p>Compare2: <input id="compare2" value="1"></p>
+<button id="search">Search</button>
+<button id="compare">Compare</button>
+<button id="terminate">Terminate</button>
+<script>
+
+document.getElementById('search').onclick = () => {
+  const textbox = document.getElementById('count');
+  const count = parseInt(textbox.value, 10);
+  parent.postMessage({ pluginMessage: { type: 'search', count } }, '*')
+}
+
+document.getElementById('compare').onclick = () => {
+  const compare1box = document.getElementById('compare1');
+  const count1 = parseInt(compare1box.value, 10);
+  const compare2box = document.getElementById('compare2');
+  const count2 = parseInt(compare2box.value, 10);
+  parent.postMessage({ pluginMessage: { type: 'compare', count1, count2 } }, '*')
+}
+document.getElementById('terminate').onclick = () => {
+  parent.postMessage({ pluginMessage: { type: 'terminate'} }, '*')
+}
+
+</script>

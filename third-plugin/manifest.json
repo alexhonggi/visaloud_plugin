@@ -1,0 +1,10 @@
+{
+  "name": "third-plugin",
+  "id": "1131073136237160884",
+  "api": "1.0.0",
+  "main": "code.js",
+  "editorType": [
+    "figma"
+  ],
+  "ui": "ui.html"
+}
