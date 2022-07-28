@@ -39,9 +39,14 @@
 /*===== Global Variables =====*/
 const debug = true;
 
-let initialFrameId;
+let initialFrameId: String;
 let initialFrameGlobal: FrameNode;
 let keycount = 0; // key에 들어갈 값 
+let frame_store_page: PageNode;
+let clonedFrameX;
+let frameWidth;
+let prevFrameString: String = null;
+
 
 /*===== Compare Function =====*/
 function ObjCompare(obj1, obj2) {
@@ -68,7 +73,7 @@ function ObjCompare(obj1, obj2) {
 /*===== Node to Object =====*/
 const nodeToObject = (node) => {
   const props = Object.entries(Object.getOwnPropertyDescriptors(node.__proto__));
-  const blacklist = ['parent', 'children', 'removed'];
+  const blacklist = ['parent', 'children', 'removed', 'fillGeometry'];
   let obj: any = { id: node.id, type: node.type, children: undefined };
 	if (node.parent) obj.parent = { id: node.parent.id, type: node.type };
   for (const [name, prop] of props) {
@@ -95,29 +100,141 @@ const nodeToObject = (node) => {
 	// }
   // children traverse
 	if (node.children) obj.children = node.children.map(child => nodeToObject(child));
-	if (node.masterComponent) obj.masterComponent = nodeToObject(node.masterComponent);
+	// if (node.masterComponent) obj.masterComponent = nodeToObject(node.masterComponent);
 	return obj;
 }
+
+const nodeToObjectWithoutId = (node) => {
+  const props = Object.entries(Object.getOwnPropertyDescriptors(node.__proto__));
+  const blacklist = ['parent', 'children', 'removed', 'fillGeometry'];
+  let obj: any = { type: node.type, children: undefined };
+	if (node.parent) obj.parent = { type: node.type };
+  for (const [name, prop] of props) {
+    if (prop.get && blacklist.indexOf(name) < 0){
+      obj[name] = prop.get.call(node);
+      // if (typeof obj[name] === 'symbol') obj[name] = 'Mixed';
+    }
+  }
+  // children traverse
+	if (node.children) obj.children = node.children.map(child => nodeToObjectWithoutId(child));
+	// if (node.masterComponent) obj.masterComponent = nodeToObject(node.masterComponent);
+	return obj;
+}
+
+
+/*===== Helper functions for PageNode =====*/
+function findChildByName(name, parent = figma.root) {
+  return parent.findChild((node) => node.name === name);
+}
+
+function focusToPageOnRun(name) {
+  figma.currentPage = findChildByName(name);
+  // console.log(figma.currentPage);
+  let temp = figma.createFrame();
+  figma.currentPage.appendChild(temp);
+  // console.log(figma.currentPage, figma.currentPage.children);
+  figma.viewport.scrollAndZoomIntoView(figma.currentPage.children);
+}
+
+function focusToPage(name) {
+  figma.currentPage = findChildByName(name);
+  console.log('now focused on page ', figma.currentPage.name);
+  figma.viewport.scrollAndZoomIntoView(figma.currentPage.children);
+}
+
+function changeCurrentPage(name) {
+  figma.currentPage = findChildByName(name);
+}
+
+function cloneInPage(pageName: String, node: SceneNode) {
+  changeCurrentPage(pageName);
+  let clonedNode = node.clone();
+  console.log('Node cloned: ', clonedNode);
+  clonedNode.x = keycount * ( clonedNode.width + 50 )
+  console.log(clonedNode.x, keycount);
+  let originalName = clonedNode.name;
+  clonedNode.name = clonedNode.name + ' ' + keycount;
+  console.log(clonedNode.name);
+  // prevFrameString = JSON.stringify(clonedNode);
+  // console.log('prevFrameString = JSON.stringify(clonedNode): ', prevFrameString);
+  // console.log('with NodeToObject: ', JSON.stringify(nodeToObjectWithoutId(clonedNode)));
+}
+
+
+/*===== UI methods =====*/
+figma.ui.onmessage = async msg => {
+  if (debug) { console.log('msg', msg); }
+  if (msg.type === 'search') {
+    console.log(String(msg.count));
+    const getPage = await getFromStorage(String(msg.count));
+    // 조건문: FrameNode만 가지고 있는 속성 출력해서 '' 나오면 console.log('Not Frame')하고 return
+    // ['ƒramenodeprops1', '2', '3'].includes() 
+    const getPageNode: FrameNode = getPage[0];
+    console.log(getPage[0]);
+    console.log('출력', getPageNode);
+    let keyskeys = await keysStorage();
+    console.log('keys', keyskeys);
+    console.log('타입', getPageNode.type);
+    console.log('id 타입은 string', getPageNode.id);
+    console.log('카운트', msg.count);
+    // console.log(getPage[0]);  // 이게 맞다
+    // console.log(getPage);
+    if (getPageNode.type != 'FRAME') { 
+      console.log('Not Frame');
+      return 
+    }
+    console.log(getPageNode, 'Frame?');
+  }
+
+  if (msg.type === 'compare') {
+    return
+  }
+  
+  if (msg.type === 'clean') {
+    let keysToClean = await keysStorage();
+    if (debug) { console.log('inside clean, keysToClean:', keysToClean); }
+    for (const key of keysToClean) {
+      if(debug) { console.log('key (', key, ') of keysToClean'); }
+      figma.clientStorage.deleteAsync(key);
+      if(debug) { console.log(key, 'deleted in', keysToClean); }
+    }
+    keycount = 0;
+    return
+  }
+  
+  // Make sure to close the plugin when you're done. Otherwise the plugin will
+  // keep running, which shows the cancel button at the bottom of the screen.
+  if (msg.type === 'terminate') {
+    figma.closePlugin();
+  }
+};
 
 /*===== Storage Functions =====*/
 	const saveToStorage = async (key, data) => {
     try {
 			await figma.clientStorage.setAsync(key, JSON.stringify(data));
-      console.log('저장되는 raw data', data);
-      console.log('saved', JSON.stringify(data));
-      console.log('saved', data.type);
+      if (debug) {
+        console.log('inside saveToStorage');
+        console.log('저장되는 raw data: ', data, '타입: ', data.type);
+        console.log('stringify되어 저장되었습니다: ', JSON.stringify(data));
+      }
     } catch (err) {
       console.log('while saving to storage catch:', err);
-      // showNotification('warning', 'reject');
+      // showNotification('warning', 'reject'); 
     }
 	};
 
 	const getFromStorage = async key => {
     try {
 			const data = await figma.clientStorage.getAsync(key);
-      console.log(data);
-      console.log(data.type);
-			return JSON.parse(data);
+      let parsedData = JSON.parse(data);
+      if (debug) {
+        console.log('inside getFromStorage');
+        console.log('key (', key, ') 로부터 반환된 데이터: ', data);
+        console.log('해당 데이터의 타입은 (', data.type, ') 입니다.');
+        console.log('이는 parse 되어 (', parsedData.type, ') 타입의 ', parsedData);
+      }
+			return parsedData;
     } catch (err) {
       console.log('while getting from storage catch:', err);
       // showNotification('warning', 'reject');
@@ -133,109 +250,36 @@ const nodeToObject = (node) => {
     }
   };
 
+
+/*===== Actions on selections =====*/
+
 async function onSelections() {
-  // [selections, selectionDescription] = handleSelections({'NODE'});
-  // let prevSelection = selections;
-  // const selections = figma.currentPage.selection; // const 쓰는게 맞을까? THINK: 다른 폴더에 함수 정의하여 따로 정의
-  // if (prevSelection == figma.currentPage.selection) { return }
-  // const selections = figma.currentPage.selection[0]; 
-  // prevSelection = selections;
-  // keycount++;
-  // // if (selections.type != 'RECTANGLE') { 
-  // //   console.log('선택된 항목이 프레임이 아닙니다')  // 나중에 console log 아닌 UI message로 바꾸기 (혹은 toast?)
-  // //   return 
-  // // }
-  // const selectionsObject = nodeToObject(selections);
-  // console.log('selectionsObject', selectionsObject);
-  let initialFrameSelection: SceneNode
-  // (figma.currentPage) 안에 있는 모든 children에 대해 {
-  //   if(해당 component.id == initialFrameGlobal.id)
-  //   initialFrameSelection = 해당 component
-  // }
-  initialFrameSelection = figma.currentPage.findAll(n => n.id === initialFrameGlobal.id)[0]
-  saveToStorage(String(keycount), initialFrameGlobal as FrameNode); // 일단 currentPage, 나중에 initialFrame
-  // let clonedFrame = initialFrameGlobal.clone();
-  // console.log(clonedFrame);
-  // console.log(initialFrameGlobal);
-  if(debug) { console.log('저장', keycount); 
-    // console.log(selections);
-  }
-}
-
-
-figma.ui.onmessage = async msg => {
-  // One way of distinguishing between different types of messages sent from
-  // your HTML page is to use an object with a "type" property like this.
-  console.log('msg', msg);
-  // 1. compare 
-  // if (msg.type === 'compare')
-
-  if (msg.type === 'search') {
-    // const nodes: SceneNode[] = [];
-    // for (let i = 0; i < msg.count; i++) {
-    //   const rect = figma.createRectangle();
-    //   rect.x = i * 150;
-    //   rect.fills = [{type: 'SOLID', color: {r: 1, g: 0.5, b: 0}}];
-    //   figma.currentPage.appendChild(rect);
-    //   nodes.push(rect);
-    // }
-    // figma.currentPage.selection = nodes;
-    // figma.viewport.scrollAndZoomIntoView(nodes);
-    console.log(String(msg.count));
-    const getPage = await getFromStorage(String(msg.count));
-    // 조건문: FrameNode만 가지고 있는 속성 출력해서 '' 나오면 console.log('Not Frame')하고 return
-    // ['ƒramenodeprops1', '2', '3'].includes() 
-    const getPageNode: FrameNode = getPage[0];
-    console.log(getPage[0]);
-    console.log('출력', getPageNode);
-    let keyskeys = await keysStorage(1);
-    console.log('keys', keyskeys);
-    console.log('타입', getPageNode.type);
-    console.log('id 타입은 string', getPageNode.id);
-    console.log('카운트', msg.count);
-    // console.log(getPage[0]);  // 이게 맞다
-    // console.log(getPage);
-    if (getPageNode.type != 'FRAME') { 
-      console.log('Not Frame');
-      return 
-    }
-    console.log(getPageNode, 'Frame?');
-  }
-
-  // Make sure to close the plugin when you're done. Otherwise the plugin will
-  // keep running, which shows the cancel button at the bottom of the screen.
-  if (msg.type === 'compare') {
-    console.log('onClose 작동중');
-    let keyskeys = await keysStorage();
-    console.log('onClose await 성공,', keyskeys);
-    for (const key of keyskeys) {
-      console.log('key of keyskeys', key);
-      figma.clientStorage.deleteAsync(key);
-      console.log(keyskeys);
-    }
-    keycount = 0;
+  keycount++;
+  // 선택이 작업 페이지에서 이루어지고 있는지 확인
+  if (figma.currentPage.id !== figma.root.children[0].id) { console.log('작업 페이지에서 작업해 주세요'); }
+  // initialFrame 선택하여 selection의 상황에 따라 사용
+  let initialFrameSelection: SceneNode;
+  initialFrameSelection = figma.currentPage.findAll(n => n.id === initialFrameId)[0]
+  if(initialFrameSelection.type != 'FRAME') {
+    console.log('initialFrameSelection is not frame but', initialFrameSelection.type);
     return
   }
-  
-  if (msg.type === 'terminate') {
-    figma.closePlugin();
-  }
-};
-
-// 실험 1. cleanKeys
-
-async function cleanKeys() {
-  if (debug) { console.log('onClose 내부의 async function cleanKeys 작동중'); }
-  let keysToClean = await keysStorage();
-  console.log('onClose await 성공,', keysToClean);
-  for (const key of keyskeys) {
-    console.log('key of keyskeys', key);
-    figma.clientStorage.deleteAsync(key);
-    console.log(keyskeys);
-  }
-  keycount = 0;
-  return
+  if (debug) { console.log(initialFrameSelection, 'is Frame') };
+  // console.log('JSON.stringify(initialFrameSelection): ', JSON.stringify(initialFrameSelection));
+  // console.log('with NodeToObject: ', JSON.stringify(nodeToObjectWithoutId(initialFrameSelection)));
+  // console.log('prevFrameString: ', prevFrameString);
+  // if (prevFrameString === JSON.stringify(initialFrameSelection)) {
+  //   console.log('변경점이 없습니다');
+  //   return
+  // }
+  saveToStorage(String(keycount), initialFrameSelection); // currentPage? or should we print this in another page?
+  if(debug) { console.log('saved with keycount (', keycount, ')') };
+  /*===== 20220728 version: =====*/
+  // clone initialFrameSelection into the Frame_store page
+  cloneInPage('frame_store', initialFrameSelection);
+  changeCurrentPage('Wireframing in Figma');
 }
+
 
 /*===== Run & Close Functions =====*/
 async function onRun() {
@@ -252,13 +296,18 @@ async function onRun() {
     console.log('관찰하려는 id를 보냄', initialFrameId);
     console.log('글로벌 변수에 저장', initialFrameGlobal);
   }
+  // createPage frame_store
+  frame_store_page = figma.createPage(); // const?
+  frame_store_page.name = 'frame_store';
+  // let baseFrame
+  // changeCurrentPage('frame_store');
 }
 
 // This is also not the place to run any asynchronous actions (e.g. register callbacks, using await, etc). 
 // 따라서 storage 내부 key pair 삭제는 다른 함수에서 진행하여야 한다. 
 function onClose() {
-  // 20220726 실험 1. synchronous 하게 만들고 clean function을 삽입하면 되지 않을까?
-  // cleanKeys();
+  // 나갈때 deletePage
+  frame_store_page.remove();
   return
 }
 
