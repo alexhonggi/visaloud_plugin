@@ -46,7 +46,7 @@ let frame_store_page: PageNode;
 let clonedFrameX;
 let frameWidth;
 let prevFrameString: String = null;
-
+let prevFrameStringWithoutId: String = null;
 
 /*===== Compare Function =====*/
 function ObjCompare(obj1, obj2) {
@@ -73,51 +73,31 @@ function ObjCompare(obj1, obj2) {
 /*===== Node to Object =====*/
 const nodeToObject = (node) => {
   const props = Object.entries(Object.getOwnPropertyDescriptors(node.__proto__));
-  const blacklist = ['parent', 'children', 'removed', 'fillGeometry'];
+  const blacklist = ['parent', 'children', 'removed', 'fillGeometry', 'absoluteTransform', 'absoluteRenderBounds', 'relativeTransform'];
   let obj: any = { id: node.id, type: node.type, children: undefined };
 	if (node.parent) obj.parent = { id: node.parent.id, type: node.type };
   for (const [name, prop] of props) {
     if (prop.get && blacklist.indexOf(name) < 0){
       obj[name] = prop.get.call(node);
-      // if (typeof obj[name] === 'symbol') obj[name] = 'Mixed';
     }
   }
-  // if (filterText.trim() !== '') {
-	// 	const filteredProperties = Object.entries(obj)
-	// 		.filter(
-	// 			entry =>
-	// 				entry[0].toLowerCase().includes(filterText.toLowerCase()) ||
-	// 				String(entry[1])
-	// 					.toLowerCase()
-	// 					.includes(filterText.toLowerCase())
-	// 		)
-	// 		.map(entry => entry[0]);
-	// 	const newObj = filteredProperties.length > 0 ? { id: obj.id, name: obj.name } : {};
-	// 	filteredProperties.forEach(property => {
-	// 		newObj[property] = obj[property];
-	// 	});
-	// 	obj = newObj;
-	// }
   // children traverse
 	if (node.children) obj.children = node.children.map(child => nodeToObject(child));
-	// if (node.masterComponent) obj.masterComponent = nodeToObject(node.masterComponent);
 	return obj;
 }
 
 const nodeToObjectWithoutId = (node) => {
   const props = Object.entries(Object.getOwnPropertyDescriptors(node.__proto__));
-  const blacklist = ['parent', 'children', 'removed', 'fillGeometry'];
+  const blacklist = ['parent', 'children', 'removed', 'fillGeometry', 'absoluteTransform', 'absoluteRenderBounds', 'relativeTransform', 'key', 'name', 'x', 'horizontalPadding'];
   let obj: any = { type: node.type, children: undefined };
 	if (node.parent) obj.parent = { type: node.type };
   for (const [name, prop] of props) {
     if (prop.get && blacklist.indexOf(name) < 0){
       obj[name] = prop.get.call(node);
-      // if (typeof obj[name] === 'symbol') obj[name] = 'Mixed';
     }
   }
   // children traverse
 	if (node.children) obj.children = node.children.map(child => nodeToObjectWithoutId(child));
-	// if (node.masterComponent) obj.masterComponent = nodeToObject(node.masterComponent);
 	return obj;
 }
 
@@ -155,9 +135,10 @@ function cloneInPage(pageName: String, node: SceneNode) {
   let originalName = clonedNode.name;
   clonedNode.name = clonedNode.name + ' ' + keycount;
   console.log(clonedNode.name);
-  // prevFrameString = JSON.stringify(clonedNode);
-  // console.log('prevFrameString = JSON.stringify(clonedNode): ', prevFrameString);
-  // console.log('with NodeToObject: ', JSON.stringify(nodeToObjectWithoutId(clonedNode)));
+  prevFrameString = JSON.stringify(clonedNode);
+  prevFrameStringWithoutId = JSON.stringify(nodeToObjectWithoutId(clonedNode));
+  console.log('[Cloned] prevFrameString = JSON.stringify(clonedNode): ', prevFrameString);
+  console.log('[Cloned] with NodeToObjectWithoutId: ', JSON.stringify(nodeToObjectWithoutId(clonedNode)));
 }
 
 
@@ -187,6 +168,7 @@ figma.ui.onmessage = async msg => {
   }
 
   if (msg.type === 'compare') {
+    // ObjCompare(fst, snd);
     return
   }
   
@@ -254,9 +236,11 @@ figma.ui.onmessage = async msg => {
 /*===== Actions on selections =====*/
 
 async function onSelections() {
-  keycount++;
   // 선택이 작업 페이지에서 이루어지고 있는지 확인
-  if (figma.currentPage.id !== figma.root.children[0].id) { console.log('작업 페이지에서 작업해 주세요'); }
+  if (figma.currentPage.id !== figma.root.children[0].id) { 
+    console.log('작업 페이지에서 작업해 주세요'); 
+  }
+  else {
   // initialFrame 선택하여 selection의 상황에 따라 사용
   let initialFrameSelection: SceneNode;
   initialFrameSelection = figma.currentPage.findAll(n => n.id === initialFrameId)[0]
@@ -264,20 +248,24 @@ async function onSelections() {
     console.log('initialFrameSelection is not frame but', initialFrameSelection.type);
     return
   }
-  if (debug) { console.log(initialFrameSelection, 'is Frame') };
-  // console.log('JSON.stringify(initialFrameSelection): ', JSON.stringify(initialFrameSelection));
-  // console.log('with NodeToObject: ', JSON.stringify(nodeToObjectWithoutId(initialFrameSelection)));
-  // console.log('prevFrameString: ', prevFrameString);
-  // if (prevFrameString === JSON.stringify(initialFrameSelection)) {
-  //   console.log('변경점이 없습니다');
-  //   return
-  // }
+  // if (debug) { console.log(initialFrameSelection, 'is Frame') };
+  if (prevFrameStringWithoutId === JSON.stringify(nodeToObjectWithoutId(initialFrameSelection))) {
+    console.log('변경점이 없습니다');
+    return
+  }
+  console.log('JSON.stringify(initialFrameSelection): ', JSON.stringify(initialFrameSelection));
+  console.log('with NodeToObjectWithoutId: ', JSON.stringify(nodeToObjectWithoutId(initialFrameSelection)));
+  console.log('prevFrameString: ', prevFrameString);
+  console.log('prevFrameStringWithoutId', prevFrameStringWithoutId);
+  keycount++;
   saveToStorage(String(keycount), initialFrameSelection); // currentPage? or should we print this in another page?
   if(debug) { console.log('saved with keycount (', keycount, ')') };
   /*===== 20220728 version: =====*/
   // clone initialFrameSelection into the Frame_store page
   cloneInPage('frame_store', initialFrameSelection);
   changeCurrentPage('Wireframing in Figma');
+  }
+  return
 }
 
 
