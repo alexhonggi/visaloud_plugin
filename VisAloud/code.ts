@@ -204,7 +204,7 @@ const nodeToObject = (node) => {
 
 const nodeToObjectWithoutId = (node) => {
   const props = Object.entries(Object.getOwnPropertyDescriptors(node.__proto__));
-  const blacklist = ['parent', 'children', 'removed', 'fillGeometry', 'absoluteTransform', 'absoluteRenderBounds', 'relativeTransform', 'key', 'name', 'x', 'horizontalPadding'];
+  const blacklist = ['parent', 'children', 'removed', 'fillGeometry', 'absoluteTransform', 'absoluteRenderBounds', 'relativeTransform', 'key', 'name', 'x', 'horizontalPadding', 'absoluteBoundingBox', 'strokeGeometry'];
   let obj: any = { type: node.type, children: undefined };
 	if (node.parent) obj.parent = { type: node.type };
   for (const [name, prop] of props) {
