@@ -8,8 +8,15 @@
   },
   "author": "",
   "license": "",
+  "type": "module",
   "devDependencies": {
     "@figma/plugin-typings": "^1.49.0",
+    "@types/node": "^18.7.8",
     "typescript": "*"
+  },
+  "dependencies": {
+    "node-fetch": "^3.2.10",
+    "xhr2": "^0.2.1",
+    "xmlhttprequest": "^1.8.0"
   }
 }

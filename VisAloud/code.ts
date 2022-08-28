@@ -49,6 +49,20 @@ let frameWidth;
 let prevFrameString: String = null;
 let prevFrameStringWithoutId: String = null;
 
+/*===== Timer functions =====*/
+const delay = ms => new Promise(res => setTimeout(res, ms));
+let timerCount = 0;
+
+async function startTimer() {
+  console.log("Timer started / became active");
+  var keepItRunning = true;
+  // this loop updates all timers every second
+  while (keepItRunning) {
+    timerCount += 1;
+    await delay(1000);
+  }
+}
+
 /*===== Compare Function =====*/
 function ObjCompare(obj1, obj2) {
   const blacklist = ['parent', 'children', 'removed']; 
@@ -253,8 +267,8 @@ function cloneInPage(pageName: String, node: SceneNode) {
   console.log(clonedNode.name);
   prevFrameString = JSON.stringify(clonedNode);
   prevFrameStringWithoutId = JSON.stringify(nodeToObjectWithoutId(clonedNode));
-  console.log('[Cloned] prevFrameString = JSON.stringify(clonedNode): ', prevFrameString);
-  console.log('[Cloned] with NodeToObjectWithoutId: ', JSON.stringify(nodeToObjectWithoutId(clonedNode)));
+  console.log('(keycount: ', keycount, ') [Cloned] prevFrameString = JSON.stringify(clonedNode): ', prevFrameString);
+  console.log('(keycount: ', keycount, ') [Cloned] with NodeToObjectWithoutId: ', JSON.stringify(nodeToObjectWithoutId(clonedNode)));
 }
 
 
@@ -311,6 +325,15 @@ figma.ui.onmessage = async msg => {
 	const saveToStorage = async (key, data) => {
     try {
 			await figma.clientStorage.setAsync(key, JSON.stringify(data));
+      // console.log("now post to server");
+      // // figma.ui.postMessage({ type: 'networkRequest', data: { "email": "hello@user.com", "response": { "name": "Tester" } }});
+      // figma.ui.postMessage({ type: 'networkRequest', dat: data});
+      // figma.ui.onmessage = async (msg) => {
+      //   // msg send back 되면 여기에 표시
+      //   console.log("msg sent back: ", msg);
+      // }
+      // console.log("should print msg back from the server");
+      // 서버에 보내는 코드
       if (debug) {
         console.log('inside saveToStorage');
         console.log('저장되는 raw data: ', data, '타입: ', data.type);
@@ -320,7 +343,7 @@ figma.ui.onmessage = async msg => {
       console.log('while saving to storage catch:', err);
       // showNotification('warning', 'reject'); 
     }
-	};
+	}; 
 
 	const getFromStorage = async key => {
     try {
@@ -353,6 +376,29 @@ figma.ui.onmessage = async msg => {
 
 async function onSelections() {
   // 선택이 작업 페이지에서 이루어지고 있는지 확인
+  // check if server works
+  // var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
+  // var xmlhttp = new XMLHttpRequest();   // new HttpRequest instance 
+  // // xmlhttp.onreadystatechange = function() {
+    // //   if (xmlhttp.readyState == XMLHttpRequest.DONE && xmlhttp.status == 200 ) {
+      // //       // 텍스트 파일의 응답 처리는 responseText 프로퍼티를 사용해야 함.
+      // //       let data = xmlhttp.responseText;
+      // //       // 텍스트 파일의 응답 처리에 responseXML 프로퍼티를 사용하면 null을 반환함.
+      // //       document.getElementById("xml").innerHTML = xmlhttp.responseXML;
+      // //   }
+      // // };
+      // xmlhttp.open("POST", 'http://localhost:4500/sample');
+      // xmlhttp.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+      // xmlhttp.send(JSON.stringify({ "email": "hello@user.com", "response": { "name": "Tester" } }));
+      
+  // figma.ui.postMessage({ type: 'networkrequest', data: 'json input here'});
+  // console.log("now post to server");
+  // figma.ui.onmessage = async (msg) => {
+  //   // msg send back 되면 여기에 표시
+  //   console.log("msg: ", msg);
+  // }
+  // console.log("should print msg back from the server");
+  console.log(timerCount);
   if (figma.currentPage.id !== figma.root.children[0].id) { 
     console.log('작업 페이지에서 작업해 주세요'); 
   }
@@ -374,21 +420,116 @@ async function onSelections() {
   console.log('prevFrameString: ', prevFrameString);
   console.log('prevFrameStringWithoutId', prevFrameStringWithoutId);
   keycount++;
+  console.log("should print msg back from the server");
   saveToStorage(String(keycount), initialFrameSelection); // currentPage? or should we print this in another page?
   if(debug) { console.log('saved with keycount (', keycount, ')') };
   /*===== 20220728 version: =====*/
   // clone initialFrameSelection into the Frame_store page
   cloneInPage('frame_store', initialFrameSelection);
   // console.log('on change; initialPage is:', figma.root.children[0].name);
+  
+  const initialFrameToImage = await initialFrameSelection.exportAsync({
+    format: 'PNG',
+    constraint: { type: 'SCALE', value: 2 },
+  })
+  // now post to server
+  console.log("now post to server");
+  // figma.ui.postMessage({ type: 'networkRequest', data: { "email": "hello@user.com", "response": { "name": "Tester" } }});
+  figma.ui.postMessage({ type: 'networkRequest', dat: nodeToObjectWithoutId(initialFrameSelection), key: keycount});
+  console.log(initialFrameToImage);
+  figma.ui.postMessage({ type: 'imageRequest', image: initialFrameToImage });
+  figma.ui.onmessage = async (msg) => {
+    // msg send back 되면 여기에 표시
+    console.log("msg sent back: ", msg);
+  }
+
   changeCurrentPage(figma.root.children[0].name);
   }
   return
 }
 
 
+// // here we create a new image
+// function createImage(dataURL) {
+
+//   var canvas = document.createElement("canvas");
+//   var croppedImage = new Image();
+//   croppedImage.onload = function () {
+    
+
+//     // canvas.toDataURL() contains your cropped image
+//     canvas.toBlob((blob) => {
+//       // upload file
+//       let formdata = new FormData();
+//       formdata.append("type", "image");
+//       formdata.append("image", blob);
+//       // formdata.append("json", JSON.stringify(properties));
+
+//       let xhr = new XMLHttpRequest();
+//       xhr.responseType = "json";
+//       xhr.onreadystatechange = function () {
+//         if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
+//           var suggestions = JSON.parse(xhr.response.suggestions);
+//           suggestions.map((prop_sugg) => {
+//             var store = {};
+//             // console.log(prop_sugg["property"]);
+//             store[prop_sugg["property"]] = prop_sugg;
+//             chrome.storage.sync.set(store, function () {
+//               // console.log("Stored suggestions in local storage!");
+//             });
+//           });
+//         }
+//       };
+//       xhr.open("POST", "http://localhost:5000/image", true);
+//       // xhr.open("POST", "http://localhost:5000/test_img", true);
+//       xhr.send(formdata);
+//     });
+//   };
+//   croppedImage.src = dataURL; // screenshot (full image)
+// }
+  // const sendToServer(event) {
+  //   // window.nameTag.value = "Processing...";
+  //   // window.nameTag.disabled = true;
+
+  //   // let blob = new Blob(audioChunks);
+
+  //   // upload file
+  //   let formdata = new FormData();
+  //   // formdata.append("type", "audio");
+  //   // formdata.append("fname", "audio.webm");
+  //   // formdata.append("data", blob);
+
+  //   let xhr = new XMLHttpRequest();
+  //   xhr.responseType = "json";
+  //   xhr.onreadystatechange = function () {
+  //     if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
+  //       // console.log("Transcription: " + xhr.response.transcription);
+  //       // window.nameTag.value = xhr.response.transcription;
+  //       // window.nameTag.disabled = false;
+  //       // window.nameTag.setAttribute("size", window.nameTag.value.length);
+  //       // var properties = xhr.response.properties;
+  //       // var direction = xhr.response.direction;
+  //       // var suggestions = xhr.response.suggestions;
+  //       // chrome.storage.sync.get(properties, function (data) {
+  //       //   modificationsLoadAndDisplay(data, direction, suggestions);
+  //       // });
+  //       console.log("Sending json: " + xhr.response.json);
+  //     }
+  //   };
+  //   xhr.open("POST", "http://localhost:4500/image", true); // Test with json
+  //   // xhr.open("POST", "http://localhost:5000/test3", true); // Test API for development
+  //   // xhr.open("POST", "http://localhost:5000/test_sst", true); // Test API with SST
+  //   xhr.send(formdata);
+
+  //   // audioChunks = [];
+  // }
+
+
+
 /*===== Run & Close Functions =====*/
 async function onRun() {
   figma.showUI(__html__);
+  startTimer();
   let initialPageId = figma.currentPage.name;
   console.log('initialPage is: ', initialPageId);
   let initialFrame = figma.currentPage.selection[0]

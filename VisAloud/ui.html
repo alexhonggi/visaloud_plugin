@@ -30,4 +30,115 @@ document.getElementById('terminate').onclick = () => {
   parent.postMessage({ pluginMessage: { type: 'terminate'} }, '*')
 }
 
+/*== The code below works ==*/
+// window.onmessage = async (event) => {
+//   console.log("asdf")
+//   if (event.data.pluginMessage.type === 'networkRequest') {
+//     console.log("networkrequest received")
+//     console.log("recieved data: ", event.data.pluginMessage.dat)
+//     console.log("JSON stringify: ", JSON.stringify(event.data.pluginMessage.dat))
+//     console.log("key: ", event.data.pluginMessage.key)
+
+//     let formdata = new FormData();
+//     // formdata.append("image", blob);
+//     formdata.append("type", "json");
+//     formdata.append("json", JSON.stringify(event.data.pluginMessage.dat))
+//     formdata.append("key", event.data.pluginMessage.key)
+//     formdata.append("image", event.data.pluginMessage.image)
+//     var request = new XMLHttpRequest()
+//     // send POST request to server
+//     request.open("POST", 'http://localhost:4500/sample')
+//     request.responseType = 'json'
+//     request.setRequestHeader("Content-Type", "application/json")
+//     // request.setRequestHeader("Content-Type", "formData");
+//     // request.send(JSON.stringify({ "email": "hello@user.com", "response": { "name": "Tester" } }))
+//     request.send(JSON.stringify(event.data.pluginMessage.dat))
+//     // let entries = formdata.entries();
+//     // for (const pair of entries) {
+//     //     console.log(pair[0]+ ', ' + pair[1]); 
+//     // }
+//     // console.log(formdata);
+//     request.onload = () => {
+//       window.parent.postMessage({pluginMessage: request.response}, '*')
+//     };
+//   }
+// }
+
+window.onmessage = async (event) => {
+  console.log("onmessage in ui.html")
+  if (event.data.pluginMessage.type === 'imageRequest') {
+    console.log("imageRequest received");
+    console.log("received image: ", event.data.pluginMessage.image);
+
+    let formdata = new FormData();
+    formdata.append('selectedImage', event.data.pluginMessage.image);
+    var request = new XMLHttpRequest()
+    request.open("POST", 'http://localhost:4500/upload');
+    // request.setRequestHeader("Content-Type", "multipart/form-data");
+    request.send(formdata)
+
+    // const sendFormData = ('http://localhost:4500/upload', formdata) => {
+    //   return fetch('http://localhost:4500/upload', {
+    //     method: 'POST',
+    //     body: formdata,
+    //   }).then(res => console.log(res.status))
+    // };
+  }
+  if (event.data.pluginMessage.type === 'networkRequest') {
+    console.log("networkrequest received")
+    console.log("recieved data: ", event.data.pluginMessage.dat)
+    console.log("JSON stringify: ", JSON.stringify(event.data.pluginMessage.dat))
+    console.log("key: ", event.data.pluginMessage.key)
+
+    let formdata = new FormData();
+    // formdata.append("image", blob);
+    formdata.append("type", "json");
+    formdata.append("json", JSON.stringify(event.data.pluginMessage.dat))
+    formdata.append("key", event.data.pluginMessage.key)
+    // formdata.append("image", event.data.pluginMessage.image)
+    var request = new XMLHttpRequest()
+    // send POST request to server
+    request.open("POST", 'http://localhost:4500/sample')
+    request.responseType = 'json'
+    request.setRequestHeader("Content-Type", "application/json")
+    // request.setRequestHeader("Content-Type", "formData");
+    // request.send(JSON.stringify({ "email": "hello@user.com", "response": { "name": "Tester" } }))
+    request.send(JSON.stringify(event.data.pluginMessage.dat))
+    // let entries = formdata.entries();
+    // for (const pair of entries) {
+    //     console.log(pair[0]+ ', ' + pair[1]); 
+    // }
+    // console.log(formdata);
+    request.onload = () => {
+      window.parent.postMessage({pluginMessage: request.response}, '*')
+    };
+  }
+  // if (event.data.pluginMessage.type === 'networkRequest') {
+  //   console.log("networkrequest received")
+  //   console.log("recieved data: ", event.data.pluginMessage.dat)
+  //   console.log("JSON stringify: ", JSON.stringify(event.data.pluginMessage.dat))
+  //   console.log("key: ", event.data.pluginMessage.key)
+  //   console.log("what if image?: ", event.data.pluginMessage.image)
+
+  //   let formdata = new FormData();
+  //   formdata.append("type", "formdata");
+  //   formdata.append("json", JSON.stringify(event.data.pluginMessage.dat));
+  //   formdata.append("key", event.data.pluginMessage.key);
+  //   formdata.append("image", event.data.pluginMessage.image);
+  //   var request = new XMLHttpRequest()
+  //   // send POST request to server
+  //   request.open("POST", 'http://localhost:4500/sample')
+  //   request.responseType = 'json';  // 추후에 변경
+  //   request.setRequestHeader("Content-Type", "multipart/form-data");
+  //   request.send(formdata);
+  //   // let entries = formdata.entries();
+  //   // for (const pair of entries) {
+  //   //     console.log(pair[0]+ ', ' + pair[1]); 
+  //   // }
+  //   // console.log(formdata);
+  //   request.onload = () => {
+  //     window.parent.postMessage({pluginMessage: request.response}, '*')
+  //   };
+  // }
+}
 </script>
