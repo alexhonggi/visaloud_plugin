@@ -36,8 +36,11 @@
  * 
  */
 
+
+// import { WritableStreamDefaultWriter } from 'node:stream/web';
+
 /*===== Global Variables =====*/
-const debug = true;
+const debug = false;
 
 let initialPageId: String;
 let initialFrameId: String;
@@ -53,6 +56,7 @@ let prevFrameStringWithoutId: String = null;
 const delay = ms => new Promise(res => setTimeout(res, ms));
 let timerCount = 0;
 
+// TODO: universal time으로 바꾸기
 async function startTimer() {
   console.log("Timer started / became active");
   var keepItRunning = true;
@@ -85,6 +89,7 @@ function ObjCompare(obj1, obj2) {
   // }
 };
 
+// Function for proper comparison 
 function deepCompare () {
   var i, l, leftChain, rightChain;
 
@@ -200,10 +205,12 @@ function deepCompare () {
   return true;
 }
 
+
+
 /*===== Node to Object =====*/
 const nodeToObject = (node) => {
   const props = Object.entries(Object.getOwnPropertyDescriptors(node.__proto__));
-  const blacklist = ['parent', 'children', 'removed', 'fillGeometry', 'absoluteTransform', 'absoluteRenderBounds', 'relativeTransform'];
+  const blacklist = ['parent', 'children', 'removed', 'masterComponent'];
   let obj: any = { id: node.id, type: node.type, children: undefined };
 	if (node.parent) obj.parent = { id: node.parent.id, type: node.type };
   for (const [name, prop] of props) {
@@ -231,6 +238,103 @@ const nodeToObjectWithoutId = (node) => {
 	return obj;
 }
 
+/*===== Figma Node Properties =====*/
+const styleProps = [
+  // 'constrainProportions', 'layoutAlign', 'layoutGrow', 'expanded', 'layoutMode', 'primaryAxisSizingMode', 'counterAxisSizingMode', 'primaryAxisAlignItems', 'counterAxisAlignItems', 'clipsContent', 'guides'
+  'opacity', 'blendMode', 'effects', 'effectStyleId', 'backgrounds', 'backgroundStyleId', 'fills', 'strokes', 'strokeWeight', 'strokeMiterLimit', 'strokeAlign', 'strokeCap', 'strokeJoin', 'dashPattern', 'fillStyleId', 'strokeStyleId', 'cornerRadius', 'cornerSmoothing', 'topLeftRadius', 'topRightRadius', 'bottomLeftRadius', 'bottomRightRadius', 'paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom', 'itemSpacing', 'layoutGrids', 'gridStyleId'
+];
+
+/*==== BoundingRect: return a bounding rect for an nodes. =====*/
+// Can be applied to highlight changes (change color of `getBoundingRect(nodeToHighlight)`)
+
+function applyMatrixToPoint(matrix: number[][], point: number[]) {
+	return [
+		point[0] * matrix[0][0] + point[1] * matrix[0][1] + matrix[0][2],
+		point[0] * matrix[1][0] + point[1] * matrix[1][1] + matrix[1][2]
+	]
+}
+
+function getBoundingRect(nodes: SceneNode[]) {
+	const boundingRect = {
+		x: 0,
+		y: 0,
+		x2: 0,
+		y2: 0,
+		height: 0,
+		width: 0
+	}
+
+	if (nodes.length) {
+		const xy = nodes.reduce(
+			(rez, node) => {
+				if (!node.absoluteTransform) {
+					console.warn(
+						'Provided node haven\'t "absoluteTransform" property, but it\'s required for calculations.'
+					)
+					return rez
+				}
+				// if (isUndefined(node.height) || isUndefined(node.width)) {
+				// 	console.warn(
+				// 		'Provided node haven\'t "width/height" property, but it\'s required for calculations.'
+				// 	)
+				// 	return rez
+				// }
+				const halfHeight = node.height / 2
+				const halfWidth = node.width / 2
+
+				const [[c0, s0, x], [s1, c1, y]] = node.absoluteTransform
+				const matrix = [
+					[c0, s0, x + halfWidth * c0 + halfHeight * s0],
+					[s1, c1, y + halfWidth * s1 + halfHeight * c1]
+				]
+
+				// the coordinates of the corners of the rectangle
+				const XY = {
+					x: [1, -1, 1, -1],
+					y: [1, -1, -1, 1]
+				}
+
+				// fill in
+				for (let i = 0; i <= 3; i++) {
+					const a = applyMatrixToPoint(matrix, [
+						XY.x[i] * halfWidth,
+						XY.y[i] * halfHeight
+					])
+					XY.x[i] = a[0]
+					XY.y[i] = a[1]
+				}
+
+				XY.x.sort((a, b) => a - b)
+				XY.y.sort((a, b) => a - b)
+
+				rez.x.push(XY.x[0])
+				rez.y.push(XY.y[0])
+				rez.x2.push(XY.x[3])
+				rez.y2.push(XY.y[3])
+				return rez
+			},
+			{ x: [], y: [], x2: [], y2: [] }
+		)
+
+		const rect = {
+			x: Math.min(...xy.x),
+			y: Math.min(...xy.y),
+			x2: Math.max(...xy.x2),
+			y2: Math.max(...xy.y2)
+		}
+
+		boundingRect.x = rect.x
+		boundingRect.y = rect.y
+		boundingRect.x2 = rect.x2
+		boundingRect.y2 = rect.y2
+		boundingRect.width = rect.x2 - rect.x
+		boundingRect.height = rect.y2 - rect.y
+	}
+
+	return boundingRect
+}
+
+
 
 /*===== Helper functions for PageNode =====*/
 function findChildByName(name, parent = figma.root) {
@@ -239,16 +343,14 @@ function findChildByName(name, parent = figma.root) {
 
 function focusToPageOnRun(name) {
   figma.currentPage = findChildByName(name);
-  // console.log(figma.currentPage);
   let temp = figma.createFrame();
   figma.currentPage.appendChild(temp);
-  // console.log(figma.currentPage, figma.currentPage.children);
   figma.viewport.scrollAndZoomIntoView(figma.currentPage.children);
 }
 
 function focusToPage(name) {
   figma.currentPage = findChildByName(name);
-  console.log('now focused on page ', figma.currentPage.name);
+  // console.log('now focused on page ', figma.currentPage.name);
   figma.viewport.scrollAndZoomIntoView(figma.currentPage.children);
 }
 
@@ -259,42 +361,36 @@ function changeCurrentPage(name) {
 function cloneInPage(pageName: String, node: SceneNode) {
   changeCurrentPage(pageName);
   let clonedNode = node.clone();
-  console.log('Node cloned: ', clonedNode);
+  if (debug) { console.log('Node cloned: ', clonedNode); };
   clonedNode.x = keycount * ( clonedNode.width + 50 )
-  console.log(clonedNode.x, keycount);
+  if (debug) { console.log(clonedNode.x, keycount); };
   let originalName = clonedNode.name;
   clonedNode.name = clonedNode.name + ' ' + keycount;
-  console.log(clonedNode.name);
+  if (debug) { console.log(clonedNode.name); };
   prevFrameString = JSON.stringify(clonedNode);
   prevFrameStringWithoutId = JSON.stringify(nodeToObjectWithoutId(clonedNode));
-  console.log('(keycount: ', keycount, ') [Cloned] prevFrameString = JSON.stringify(clonedNode): ', prevFrameString);
-  console.log('(keycount: ', keycount, ') [Cloned] with NodeToObjectWithoutId: ', JSON.stringify(nodeToObjectWithoutId(clonedNode)));
+  // console.log('(keycount: ', keycount, ') [Cloned] prevFrameString = JSON.stringify(clonedNode): ', prevFrameString);
+  // console.log('(keycount: ', keycount, ') [Cloned] with NodeToObjectWithoutId: ', JSON.stringify(nodeToObjectWithoutId(clonedNode)));
 }
 
 
 /*===== UI methods =====*/
 figma.ui.onmessage = async msg => {
-  if (debug) { console.log('msg', msg); }
   if (msg.type === 'search') {
-    console.log(String(msg.count));
+    // console.log(String(msg.count));
     const getPage = await getFromStorage(String(msg.count));
     // 조건문: FrameNode만 가지고 있는 속성 출력해서 '' 나오면 console.log('Not Frame')하고 return
     // ['ƒramenodeprops1', '2', '3'].includes() 
     const getPageNode: FrameNode = getPage[0];
-    console.log(getPage[0]);
-    console.log('출력', getPageNode);
+    // console.log(getPage[0]);
+    // console.log('출력', getPageNode);
     let keyskeys = await keysStorage();
-    console.log('keys', keyskeys);
-    console.log('타입', getPageNode.type);
-    console.log('id 타입은 string', getPageNode.id);
-    console.log('카운트', msg.count);
-    // console.log(getPage[0]);  // 이게 맞다
-    // console.log(getPage);
+  
     if (getPageNode.type != 'FRAME') { 
       console.log('Not Frame');
       return 
     }
-    console.log(getPageNode, 'Frame?');
+    // console.log(getPageNode, 'Frame?');
   }
 
   if (msg.type === 'compare') {
@@ -302,6 +398,7 @@ figma.ui.onmessage = async msg => {
     return
   }
   
+  // Clean keys in keysStorage
   if (msg.type === 'clean') {
     let keysToClean = await keysStorage();
     if (debug) { console.log('inside clean, keysToClean:', keysToClean); }
@@ -325,15 +422,6 @@ figma.ui.onmessage = async msg => {
 	const saveToStorage = async (key, data) => {
     try {
 			await figma.clientStorage.setAsync(key, JSON.stringify(data));
-      // console.log("now post to server");
-      // // figma.ui.postMessage({ type: 'networkRequest', data: { "email": "hello@user.com", "response": { "name": "Tester" } }});
-      // figma.ui.postMessage({ type: 'networkRequest', dat: data});
-      // figma.ui.onmessage = async (msg) => {
-      //   // msg send back 되면 여기에 표시
-      //   console.log("msg sent back: ", msg);
-      // }
-      // console.log("should print msg back from the server");
-      // 서버에 보내는 코드
       if (debug) {
         console.log('inside saveToStorage');
         console.log('저장되는 raw data: ', data, '타입: ', data.type);
@@ -341,7 +429,6 @@ figma.ui.onmessage = async msg => {
       }
     } catch (err) {
       console.log('while saving to storage catch:', err);
-      // showNotification('warning', 'reject'); 
     }
 	}; 
 
@@ -358,7 +445,6 @@ figma.ui.onmessage = async msg => {
 			return parsedData;
     } catch (err) {
       console.log('while getting from storage catch:', err);
-      // showNotification('warning', 'reject');
     }
 	};
 
@@ -375,30 +461,10 @@ figma.ui.onmessage = async msg => {
 /*===== Actions on selections =====*/
 
 async function onSelections() {
-  // 선택이 작업 페이지에서 이루어지고 있는지 확인
-  // check if server works
-  // var XMLHttpRequest = require("xmlhttprequest").XMLHttpRequest;
-  // var xmlhttp = new XMLHttpRequest();   // new HttpRequest instance 
-  // // xmlhttp.onreadystatechange = function() {
-    // //   if (xmlhttp.readyState == XMLHttpRequest.DONE && xmlhttp.status == 200 ) {
-      // //       // 텍스트 파일의 응답 처리는 responseText 프로퍼티를 사용해야 함.
-      // //       let data = xmlhttp.responseText;
-      // //       // 텍스트 파일의 응답 처리에 responseXML 프로퍼티를 사용하면 null을 반환함.
-      // //       document.getElementById("xml").innerHTML = xmlhttp.responseXML;
-      // //   }
-      // // };
-      // xmlhttp.open("POST", 'http://localhost:4500/sample');
-      // xmlhttp.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
-      // xmlhttp.send(JSON.stringify({ "email": "hello@user.com", "response": { "name": "Tester" } }));
-      
-  // figma.ui.postMessage({ type: 'networkrequest', data: 'json input here'});
-  // console.log("now post to server");
-  // figma.ui.onmessage = async (msg) => {
-  //   // msg send back 되면 여기에 표시
-  //   console.log("msg: ", msg);
-  // }
-  // console.log("should print msg back from the server");
-  console.log(timerCount);
+  // console.log(timerCount);
+  const selectionTimer = timerCount;
+  const selectionTime = new Date().toUTCString();
+  // should only be triggered in main page (main page should be on the top)
   if (figma.currentPage.id !== figma.root.children[0].id) { 
     console.log('작업 페이지에서 작업해 주세요'); 
   }
@@ -410,34 +476,41 @@ async function onSelections() {
     console.log('initialFrameSelection is not frame but', initialFrameSelection.type);
     return
   }
-  // if (debug) { console.log(initialFrameSelection, 'is Frame') };
+
+  // selection이 있음에도 불구하고 변경점이 없으면 return
+  // 여기서 id를 제외하고 비교 - use function nodeToObjectWithoutId
   if (prevFrameStringWithoutId === JSON.stringify(nodeToObjectWithoutId(initialFrameSelection))) {
     console.log('변경점이 없습니다');
     return
   }
-  console.log('JSON.stringify(initialFrameSelection): ', JSON.stringify(initialFrameSelection));
-  console.log('with NodeToObjectWithoutId: ', JSON.stringify(nodeToObjectWithoutId(initialFrameSelection)));
-  console.log('prevFrameString: ', prevFrameString);
-  console.log('prevFrameStringWithoutId', prevFrameStringWithoutId);
+  if (debug) {
+    console.log('JSON.stringify(initialFrameSelection): ', JSON.stringify(initialFrameSelection));
+    console.log('with NodeToObjectWithoutId: ', JSON.stringify(nodeToObjectWithoutId(initialFrameSelection)));
+    console.log('prevFrameString: ', prevFrameString);
+    console.log('prevFrameStringWithoutId', prevFrameStringWithoutId);
+  }
+
+  // if not returned (변경점이 존재하면), increment keycount
   keycount++;
-  console.log("should print msg back from the server");
   saveToStorage(String(keycount), initialFrameSelection); // currentPage? or should we print this in another page?
   if(debug) { console.log('saved with keycount (', keycount, ')') };
-  /*===== 20220728 version: =====*/
+
+  /*===== clone frames in frame_store page =====*/
   // clone initialFrameSelection into the Frame_store page
   cloneInPage('frame_store', initialFrameSelection);
   // console.log('on change; initialPage is:', figma.root.children[0].name);
   
+  // if want to reduce the size of image, use 'sharp'
   const initialFrameToImage = await initialFrameSelection.exportAsync({
     format: 'PNG',
     constraint: { type: 'SCALE', value: 2 },
-  })
-  // now post to server
+  });
+
+  /*===== Now post to server =====*/
   console.log("now post to server");
-  // figma.ui.postMessage({ type: 'networkRequest', data: { "email": "hello@user.com", "response": { "name": "Tester" } }});
-  figma.ui.postMessage({ type: 'networkRequest', dat: nodeToObjectWithoutId(initialFrameSelection), key: keycount});
-  console.log(initialFrameToImage);
-  figma.ui.postMessage({ type: 'imageRequest', image: initialFrameToImage });
+  // data should be nodeToObject not nodeToObjectWithoutId
+  figma.ui.postMessage({ type: 'jsonRequest', key: keycount, data: nodeToObject(initialFrameSelection), timer: selectionTimer, time: selectionTime });
+  figma.ui.postMessage({ type: 'imgRequest', image: initialFrameToImage });
   figma.ui.onmessage = async (msg) => {
     // msg send back 되면 여기에 표시
     console.log("msg sent back: ", msg);
@@ -449,104 +522,23 @@ async function onSelections() {
 }
 
 
-// // here we create a new image
-// function createImage(dataURL) {
-
-//   var canvas = document.createElement("canvas");
-//   var croppedImage = new Image();
-//   croppedImage.onload = function () {
-    
-
-//     // canvas.toDataURL() contains your cropped image
-//     canvas.toBlob((blob) => {
-//       // upload file
-//       let formdata = new FormData();
-//       formdata.append("type", "image");
-//       formdata.append("image", blob);
-//       // formdata.append("json", JSON.stringify(properties));
-
-//       let xhr = new XMLHttpRequest();
-//       xhr.responseType = "json";
-//       xhr.onreadystatechange = function () {
-//         if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
-//           var suggestions = JSON.parse(xhr.response.suggestions);
-//           suggestions.map((prop_sugg) => {
-//             var store = {};
-//             // console.log(prop_sugg["property"]);
-//             store[prop_sugg["property"]] = prop_sugg;
-//             chrome.storage.sync.set(store, function () {
-//               // console.log("Stored suggestions in local storage!");
-//             });
-//           });
-//         }
-//       };
-//       xhr.open("POST", "http://localhost:5000/image", true);
-//       // xhr.open("POST", "http://localhost:5000/test_img", true);
-//       xhr.send(formdata);
-//     });
-//   };
-//   croppedImage.src = dataURL; // screenshot (full image)
-// }
-  // const sendToServer(event) {
-  //   // window.nameTag.value = "Processing...";
-  //   // window.nameTag.disabled = true;
-
-  //   // let blob = new Blob(audioChunks);
-
-  //   // upload file
-  //   let formdata = new FormData();
-  //   // formdata.append("type", "audio");
-  //   // formdata.append("fname", "audio.webm");
-  //   // formdata.append("data", blob);
-
-  //   let xhr = new XMLHttpRequest();
-  //   xhr.responseType = "json";
-  //   xhr.onreadystatechange = function () {
-  //     if (this.readyState === XMLHttpRequest.DONE && this.status === 200) {
-  //       // console.log("Transcription: " + xhr.response.transcription);
-  //       // window.nameTag.value = xhr.response.transcription;
-  //       // window.nameTag.disabled = false;
-  //       // window.nameTag.setAttribute("size", window.nameTag.value.length);
-  //       // var properties = xhr.response.properties;
-  //       // var direction = xhr.response.direction;
-  //       // var suggestions = xhr.response.suggestions;
-  //       // chrome.storage.sync.get(properties, function (data) {
-  //       //   modificationsLoadAndDisplay(data, direction, suggestions);
-  //       // });
-  //       console.log("Sending json: " + xhr.response.json);
-  //     }
-  //   };
-  //   xhr.open("POST", "http://localhost:4500/image", true); // Test with json
-  //   // xhr.open("POST", "http://localhost:5000/test3", true); // Test API for development
-  //   // xhr.open("POST", "http://localhost:5000/test_sst", true); // Test API with SST
-  //   xhr.send(formdata);
-
-  //   // audioChunks = [];
-  // }
-
-
-
 /*===== Run & Close Functions =====*/
 async function onRun() {
   figma.showUI(__html__);
-  startTimer();
-  let initialPageId = figma.currentPage.name;
-  console.log('initialPage is: ', initialPageId);
+  startTimer(); // set timer when the plugin starts -> relative time
+  // let initialPageId = figma.currentPage.name;
   let initialFrame = figma.currentPage.selection[0]
-  if(debug) { console.log('initialFrame', initialFrame); }
   if (initialFrame.type != 'FRAME') { 
-    console.log('선택된 항목이 프레임이 아닙니다')  // 나중에 console log 아닌 UI message로 바꾸기 (혹은 toast?)
+    console.log('선택된 항목이 프레임이 아닙니다');
     return 
   }
   initialFrameId = initialFrame.id; // 관찰하고자 하는 프레임의 id를 보냄
   initialFrameGlobal = initialFrame // 필요없으면 삭제
-  if(debug) { 
-    console.log('관찰하려는 id를 보냄', initialFrameId);
-    console.log('글로벌 변수에 저장', initialFrameGlobal);
-  }
+  
   // createPage frame_store
   frame_store_page = figma.createPage(); // const?
   frame_store_page.name = 'frame_store';
+
   // let baseFrame
   // changeCurrentPage('frame_store');
 }
